@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureAI — Prompt Defense</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="ambient" aria-hidden="true">
+        <canvas id="particle-canvas"></canvas>
+        <div class="orb orb-a"></div>
+        <div class="orb orb-b"></div>
+        <div class="orb orb-c"></div>
+        <div class="aurora a1"></div>
+        <div class="aurora a2"></div>
+        <div class="grid-fade"></div>
+        <div class="scan-beam"></div>
+        <div class="vignette"></div>
+    </div>
+
+    <div id="cursor-glow" aria-hidden="true"></div>
+
+    <div id="app">
+        <nav id="sidebar">
+            <div class="logo">
+                <div class="logo-mark" aria-hidden="true">
+                    <span class="logo-ring"></span>
+                    <span class="logo-ring logo-ring-2"></span>
+                    <span class="material-icons">shield</span>
+                </div>
+                <div class="logo-copy">
+                    <span class="logo-text">SecureAI</span>
+                    <span class="logo-sub">5-layer defense</span>
+                </div>
+            </div>
+
+            <div class="nav-section">
+                <h3>Workspace</h3>
+                <ul>
+                    <li class="active" data-tab="chat">
+                        <span class="nav-ico"><span class="material-icons">forum</span></span>
+                        <span>Chat</span>
+                        <span class="badge live-badge">Live</span>
+                    </li>
+                    <li data-tab="analytics">
+                        <span class="nav-ico"><span class="material-icons">insights</span></span>
+                        <span>Analytics</span>
+                    </li>
+                    <li data-tab="security">
+                        <span class="nav-ico"><span class="material-icons">policy</span></span>
+                        <span>Security Log</span>
+                        <span class="badge" id="log-count">0</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="nav-section">
+                <h3>System</h3>
+                <div id="system-status">
+                    <div class="status-item">
+                        <span class="status-dot" id="api-status"></span>
+                        <span>API: <span id="api-status-text">Checking...</span></span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-dot" id="gemini-status"></span>
+                        <span>LLM: <span id="gemini-status-text">Checking...</span></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="nav-footer">
+                <div class="stats">
+                    <div class="stat-pill blocked-pill">
+                        <span class="material-icons">block</span>
+                        <span id="blocked-count">0</span>
+                        <small>blocked</small>
+                    </div>
+                    <div class="stat-pill safe-pill">
+                        <span class="material-icons">verified</span>
+                        <span id="safe-count">0</span>
+                        <small>safe</small>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <main id="main-content">
+            <div id="chat-tab" class="tab-content active">
+                <div class="chat-header">
+                    <div class="chat-title-block">
+                        <h2>
+                            <span class="title-shine">Secure Assistant</span>
+                        </h2>
+                        <p class="chat-kicker">Every prompt is scanned before reply</p>
+                    </div>
+                    <div class="header-right">
+                        <span id="chat-status" class="online pulse-dot">Online</span>
+                        <div class="header-actions">
+                            <button id="clear-chat" class="btn-secondary" type="button">
+                                <span class="material-icons">delete_outline</span> Clear
+                            </button>
+                            <button id="new-chat" class="btn-primary" type="button">
+                                <span class="material-icons">add</span> New
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="chat-stage">
+                    <div class="stage-scan" id="stage-scan" aria-hidden="true"></div>
+                    <div id="chat-messages">
+                        <div class="message bot enter">
+                            <div class="avatar bot-av">
+                                <span class="av-ring"></span>
+                                <span class="material-icons">smart_toy</span>
+                            </div>
+                            <div class="content">
+                                Hello. I'm your secure AI assistant. Prompts are checked by a 5-layer defense pipeline before any model reply.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="chat-input-container">
+                    <div id="security-indicator" class="security-safe">
+                        <span class="sec-pulse"></span>
+                        <span class="material-icons">shield</span>
+                        <span id="security-status">Ready</span>
+                        <span class="sec-wave"></span>
+                    </div>
+                    <div class="chat-input-wrapper">
+                        <div class="input-glow"></div>
+                        <textarea id="chat-input" rows="1" placeholder="Ask something — injections get rewritten safely..."></textarea>
+                        <button id="send-btn" class="btn-send" type="button" aria-label="Send">
+                            <span class="send-burst"></span>
+                            <span class="material-icons">arrow_upward</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="analytics-tab" class="tab-content">
+                <div class="analytics-header">
+                    <div>
+                        <h2><span class="title-shine">Security Analytics</span></h2>
+                        <p class="analytics-subtitle">Live threat mix from this session</p>
+                    </div>
+                </div>
+
+                <div id="analytics-stats">
+                    <div class="stat-card">
+                        <div class="stat-glow"></div>
+                        <div class="stat-icon"><span class="material-icons">query_stats</span></div>
+                        <div>
+                            <h3>Total Prompts</h3>
+                            <p id="total-prompts">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card blocked">
+                        <div class="stat-glow"></div>
+                        <div class="stat-icon"><span class="material-icons">gpp_bad</span></div>
+                        <div>
+                            <h3>Blocked</h3>
+                            <p id="stat-blocked">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card safe">
+                        <div class="stat-glow"></div>
+                        <div class="stat-icon"><span class="material-icons">gpp_good</span></div>
+                        <div>
+                            <h3>Safe</h3>
+                            <p id="stat-safe">0</p>
+                        </div>
+                    </div>
+                    <div class="stat-card rate">
+                        <div class="stat-glow"></div>
+                        <div class="stat-icon"><span class="material-icons">percent</span></div>
+                        <div>
+                            <h3>Block Rate</h3>
+                            <p id="stat-block-rate">0%</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="threat-summary">
+                    <h3>Threat level breakdown</h3>
+                    <div class="threat-grid">
+                        <div class="threat-card critical">
+                            <div class="threat-bar"></div>
+                            <div class="threat-radar"></div>
+                            <div class="threat-info">
+                                <span class="threat-label">Critical</span>
+                                <span class="threat-count" id="critical-count">0</span>
+                                <span class="threat-pct" id="critical-pct">0%</span>
+                            </div>
+                        </div>
+                        <div class="threat-card high">
+                            <div class="threat-bar"></div>
+                            <div class="threat-radar"></div>
+                            <div class="threat-info">
+                                <span class="threat-label">High</span>
+                                <span class="threat-count" id="high-count">0</span>
+                                <span class="threat-pct" id="high-pct">0%</span>
+                            </div>
+                        </div>
+                        <div class="threat-card medium">
+                            <div class="threat-bar"></div>
+                            <div class="threat-radar"></div>
+                            <div class="threat-info">
+                                <span class="threat-label">Medium</span>
+                                <span class="threat-count" id="medium-count">0</span>
+                                <span class="threat-pct" id="medium-pct">0%</span>
+                            </div>
+                        </div>
+                        <div class="threat-card low">
+                            <div class="threat-bar"></div>
+                            <div class="threat-radar"></div>
+                            <div class="threat-info">
+                                <span class="threat-label">Low</span>
+                                <span class="threat-count" id="low-count">0</span>
+                                <span class="threat-pct" id="low-pct">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="attack-types">
+                    <h3>Attack types detected</h3>
+                    <div id="attack-chart"></div>
+                </div>
+
+                <div id="explainable-ai">
+                    <h3>Attack analysis</h3>
+                    <div id="explainable-details">
+                        <p class="empty-state">No attack data yet — blocked prompts will appear here.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="security-tab" class="tab-content">
+                <div class="analytics-header">
+                    <div>
+                        <h2><span class="title-shine">Security Log</span></h2>
+                        <p class="analytics-subtitle">Blocked events from this browser session</p>
+                    </div>
+                </div>
+                <div class="log-controls">
+                    <div class="log-controls-left">
+                        <button id="clear-log" class="btn-danger" type="button">Clear Log</button>
+                        <button id="export-csv" class="btn-primary" type="button">
+                            <span class="material-icons">download</span> Export CSV
+                        </button>
+                    </div>
+                    <span id="log-total">Total: 0 events</span>
+                </div>
+                <div class="table-container">
+                    <table id="security-log-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Prompt</th>
+                                <th>Attack Type</th>
+                                <th>Risk Score</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="security-log-body">
+                            <tr><td colspan="5" class="empty-state">No security events logged yet</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
