@@ -1,35 +1,34 @@
 # A Hybrid Lexical–Semantic Pipeline for Prompt-Injection Detection with Intent-Preserving Mitigation
 
 **Author:** Shams-ul Arefin  
-**Affiliation:** Independent Research / Open-Source Prototype  
-**Version:** 4.0.0  
-**Repository:** [Prompt-Attack-Monitoring-and-Controlling](https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling)  
-**Preferred citation:** see [`CITATION.cff`](author/CITATION.cff) and [`author/ATTRIBUTION.md`](author/ATTRIBUTION.md)
+**Email / GitHub:** [@arefin95f](https://github.com/arefin95f)  
+**Repository:** https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling  
+**Citation metadata:** [`author/CITATION.cff`](author/CITATION.cff)
 
 ---
 
 ## Abstract
 
-Prompt injection has become a first-class security risk for Large Language Model (LLM) applications: untrusted natural-language input can override system instructions, exfiltrate secrets, invoke tools, or jailbreak safety policies. Existing defenses are often either brittle signature filters, costly end-to-end LLM judges, or single-model classifiers that trade precision for recall. This paper presents a **gated hybrid lexical–semantic pipeline** that combines (i) rule-based prefiltering and text normalization, (ii) TF–IDF classical detectors fused by a weighted ensemble, (iii) a gated DeBERTa semantic upgrade, (iv) train-only attack-bank retrieval, (v) an ambiguity-only judge with corroboration constraints, and (vi) **intent-preserving mitigation** that rewrites blocked prompts into a single safe user request rather than hard-dropping the interaction. On a frozen held-out test set of **N = 40,402** labeled prompts, the full system achieves **accuracy 0.9583**, **precision 0.9706**, **recall 0.9469**, **F1 0.9586**, **AUC-ROC 0.9665**, and **FPR 0.0299**, with mean latency **10.68 ms**. Ablation shows that classical layers alone are high-precision but miss more attacks (recall 0.8714), while the hybrid stack recovers recall with a controlled false-positive budget. The software prototype, evaluation scripts, and configuration are released for reproducible research.
+Large Language Models (LLMs) cannot reliably separate trusted instructions from untrusted natural-language content. Prompt injection exploits that ambiguity to override system policies, extract confidential context, invoke tools, or jailbreak safety constraints. This paper proposes a hybrid lexical–semantic detection and mitigation pipeline that places an application-layer gateway in front of the model. The pipeline combines text normalization, rule-based prefiltering, TF–IDF classical classifiers fused by a weighted ensemble, a gated DeBERTa semantic module, train-only attack-bank retrieval, an ambiguity-conditioned judge with corroboration constraints, and an intent-preserving rewriter that converts blocked adversarial prompts into a single policy-compliant user request. The training corpus integrates named public and curated sources totaling 278,843 labeled examples; evaluation uses a frozen held-out test set of 40,402 prompts. The complete system attains accuracy 0.9583, precision 0.9706, recall 0.9469, F1-score 0.9586, AUC-ROC 0.9665, and false-positive rate 0.0299, with mean latency 10.68 ms. Ablation experiments quantify the contribution of each major component and characterize the precision–recall operating trade-off between classical and hybrid configurations.
 
 ### Index Terms
 
-Prompt injection, jailbreak detection, LLM security, hybrid NLP, ensemble learning, DeBERTa, intent-preserving mitigation, ablation study.
+Prompt injection, jailbreak detection, large language model security, hybrid natural language processing, ensemble classification, DeBERTa, intent-preserving mitigation, ablation study.
 
 ---
 
 ## I. Introduction
 
-Large Language Models are increasingly embedded in assistants, agents, RAG pipelines, and enterprise copilots. Because models treat natural language as both *data* and *control*, adversaries can craft inputs that blur that boundary—an attack class now ranked among the top risks for LLM applications [1], [2], [3]. Real deployments have already leaked system prompts and behavioral constraints through injection [4].
+The rapid deployment of LLMs in conversational agents, retrieval-augmented generation (RAG) systems, and tool-using agents has expanded the software attack surface beyond traditional input validation. Because model behavior is steered by text, adversarial prompts can reprogram the intended task—an attack class now widely recognized as a primary risk for LLM applications [1]–[3]. Documented incidents show that system prompts and operational constraints can be extracted through carefully crafted injections [4].
 
-Two practical gaps remain. First, **single-layer detectors** (rules, classical ML, or one transformer) struggle under distribution shift: obfuscation, story jailbreaks, multi-turn framing, and tool-oriented payloads. Second, many systems **only detect and block**, discarding legitimate user goals wrapped inside adversarial scaffolding. Production UX and safety both benefit when a blocked injection is converted into a clarified, policy-compliant request.
+Prior defenses span signature filters, classical machine learning, fine-tuned transformers, application-level prompt engineering, and model-side self-protection. Surveys and comparative studies show that no single detector dominates across attack families, cost budgets, and deployment constraints [1], [2], [11]. Simultaneously, many pipelines stop at binary blocking: legitimate user goals wrapped in adversarial scaffolding are discarded rather than recovered.
 
-This work contributes:
+This work addresses both issues through a unified gateway architecture. The system escalates computational cost only when classical evidence is uncertain, enforces precision-oriented blocking rules, and—when a prompt is blocked—extracts residual benign intent and rewrites a safe continuation. The contributions are as follows:
 
-1. A **five-layer gated architecture** (plus normalization/retrieval) that escalates expensive semantic components only when the classical ensemble is uncertain.
-2. A **precision-oriented decision policy** (risk/agreement floors, disabled DeBERTa force-block, corroboration-gated judge) tuned for low false-positive rate on held-out traffic.
-3. An **intent-preserving Layer-5 rewriter** that extracts a legitimate goal and emits one safe natural prompt.
-4. A **paper-primary evaluation protocol** on frozen `test.jsonl` (N = 40,402) with train-only retrieval memory (no test leakage) and component ablations.
+1. A complete hybrid detection architecture that integrates lexical rules, TF–IDF ensembles, gated semantic scoring, retrieval memory, and corroboration-gated judgment.
+2. An intent-preserving mitigation stage that transforms blocked injections into clarified, policy-compliant requests.
+3. A reproducible evaluation protocol on a frozen held-out test set with named training sources, train-only retrieval construction, and systematic ablations.
+4. Empirical evidence that the hybrid configuration improves recall over classical-only detection while retaining a controlled false-positive rate suitable for interactive use.
 
 ---
 
@@ -37,197 +36,216 @@ This work contributes:
 
 ### A. Taxonomies, Surveys, and Threat Models
 
-Duarte *et al.* provide a systematic IEEE Access review of prompt-injection trends, taxonomies, evaluation protocols, and defenses, covering direct overrides, multi-turn manipulations, structured indirect injection, and tool-assisted attacks [1]. Correia *et al.* survey LLM defenses against injection and jailbreaking and extend NIST adversarial-ML taxonomy with additional defense categories and an effectiveness catalog [2]. Chu proposes the Layered Attack Surface Model (LASM) for *agentic* systems, arguing that controls do not transfer across architectural layers or temporal scales [3]. Arshad develops a STRIDE-oriented threat model for enterprise and RAG settings and argues that classical input validation is insufficient for non-deterministic interfaces [5]. Sarvakar synthesizes attack theory, techniques, and secure-AI system design principles [6].
+Duarte *et al.* present a systematic review of prompt-injection attacks, covering taxonomies, evaluation practices, defenses, and open challenges across direct, multi-turn, structured, and tool-assisted threats [1]. Correia *et al.* survey mitigation strategies against injection and jailbreaking and extend NIST adversarial machine-learning taxonomy with additional defense categories [2]. Chu introduces the Layered Attack Surface Model for agentic systems and argues that controls are not transferable across architectural layers or temporal horizons [3]. Arshad formulates an enterprise-oriented STRIDE threat model for LLM and RAG deployments [5]. Sarvakar consolidates theoretical foundations, attack techniques, and secure-system design guidance [6].
 
-### B. Detection Frameworks and Empirical Defenses
+### B. Detection Systems
 
-Prakash *et al.* propose a hybrid real-time detector combining heuristic pre-filtering, semantic transformer embeddings, and behavioral pattern recognition, reporting strong balanced metrics on their evaluation set [7]. Hadiprakoso presents an adaptive multi-layer framework for detecting and mitigating prompt injection [8]. Alshammari and Alsaleh integrate gateway telemetry with Elastic SIEM rules and a One-Class SVM, emphasizing SOC visibility for multi-turn campaigns [9]. Adharsh *et al.* outline a model-agnostic detection framework oriented to LLM-based security assistants and dataset design [10]. Dzhaliuk *et al.* comparatively evaluate traditional ML, fine-tuned encoders, specialized injection detectors, and LLM-as-classifier setups on a large labeled corpus, highlighting deployment trade-offs between accuracy and cost [11].
+Prakash *et al.* propose a hybrid real-time detector combining heuristic prefiltering, semantic embeddings, and behavioral cues [7]. Hadiprakoso describes an adaptive multi-layer framework for detection and mitigation [8]. Alshammari and Alsaleh couple gateway telemetry with SIEM correlation and one-class SVM anomaly scoring for operational visibility [9]. Adharsh *et al.* outline a model-agnostic detection framework for LLM-based security assistants [10]. Dzhaliuk *et al.* compare classical ML, fine-tuned encoders, specialized injection detectors, and LLM-as-classifier setups on a large labeled corpus, emphasizing accuracy–cost trade-offs [11].
 
-### C. Application-Layer Hardening and Adaptive Evaluation
+### C. Hardening Beyond Classification
 
-Deep *et al.* stress-test nine defense configurations with an adaptive attacker over tens of thousands of rounds and find that model-self-protection eventually fails, while application-level output filtering held in their setting [4]. Chen *et al.* study test-time defenses based on a small number of *DefensiveTokens* against injection when systems consume external data [12]. Viana proposes SPEF, a four-layer black-box Secure Prompt Engineering Framework, reporting large Attack Success Rate reductions under controlled adversarial corpora [13].
+Deep *et al.* evaluate multiple defenses under adaptive attack pressure and conclude that security boundaries must be enforced in application code rather than entrusted solely to the model under attack [4]. Chen *et al.* study test-time DefensiveTokens for systems that consume external data [12]. Viana proposes SPEF, a layered secure prompt-engineering framework operating under black-box API constraints [13].
 
-### D. Positioning of This Work
+### D. Relation to This Work
 
-Relative to surveys [1], [2], [3] and single-stack detectors [7], [9], [11], this repository implements a **production-shaped hybrid**: classical TF–IDF ensemble for the common case, gated semantic upgrade, train-only retrieval, ambiguity-only judging, and **mitigation that preserves benign intent**. Unlike SPEF-style prompt engineering alone [13] or token-only test-time defenses [12], our primary artifact is an offline/online **detection + rewrite pipeline** with held-out metrics and ablations under a fixed test contract.
-
----
-
-## III. Problem Formulation and Threat Model
-
-### A. Problem
-
-Given user (or retrieved) text \(x\), decide action \(a \in \{\mathrm{ALLOW}, \mathrm{FLAG}, \mathrm{REVIEW}, \mathrm{BLOCK}\}\) and, if blocked, produce a mitigated prompt \(x'\) that retains legitimate intent while removing injection wrappers.
-
-### B. Adversary Capabilities
-
-We consider adversaries who can:
-
-- Issue **direct** overrides (“ignore previous instructions”, role swaps, DAN-style jailbreaks).
-- Attempt **system/data/tool extraction** and delimiter/context hijacks.
-- Use **obfuscation** (leet, zero-width, Base64/URL encodings).
-- Frame attacks as **stories**, emotional manipulation, or multi-turn context poisoning.
-- Embed **indirect** instructions in content that may later enter the model context (RAG/agent settings), following threat discussions in [3], [5], [6].
-
-We assume the defender controls a gateway in front of the LLM (application-layer enforcement), consistent with arguments that security boundaries should not rely solely on the attacked model [4].
-
-### C. Design Goals
-
-- **High recall** on diverse injection families without catastrophic FPR on benign creative/code text.
-- **Low latency** for interactive chat (tens of milliseconds classically; gated transformer only when needed).
-- **No test leakage** into retrieval memory.
-- **Graceful mitigation**: blocked users receive a safe rewritten request, not only a refusal.
+Building on the layered-defense consensus in [1], [2], [7], [8], this paper presents an end-to-end gateway that couples hybrid detection with intent-preserving rewrite. Relative to prompt-engineering-only frameworks [13] and token-only test-time defenses [12], the emphasis here is measurable offline detection quality, low interactive latency, and mitigation that retains legitimate user intent after a block decision.
 
 ---
 
-## IV. Proposed Method
+## III. Threat Model and Design Objectives
 
-### A. System Overview
+### A. Problem Statement
 
-The system is a **5-layer pipeline with Phase 1–5 upgrades** (config `configs/config.yaml`, v4.0.0):
+Let \(x\) denote untrusted text entering an LLM application (user message or retrieved content). The defender computes an action
+\[
+a \in \{\mathrm{ALLOW},\mathrm{FLAG},\mathrm{REVIEW},\mathrm{BLOCK}\}
+\]
+and, when \(a=\mathrm{BLOCK}\), produces a mitigated prompt \(x'\) that preserves legitimate intent while removing adversarial instruction wrappers.
 
-| Stage | Component | Role |
+### B. Adversary Model
+
+The adversary may submit or inject text that attempts to:
+
+- override system instructions through direct commands, role reassignment, or jailbreak personas;
+- extract system prompts, hidden policies, or sensitive application data;
+- coerce tool use or delimiter/context hijacking;
+- conceal payloads via obfuscation (character substitution, zero-width characters, encodings);
+- distribute intent across narrative framing or multi-turn context poisoning;
+- place indirect instructions in content later consumed by RAG or agent pipelines [3], [5], [6].
+
+The defender is assumed to control an application-layer gateway that can inspect prompts before model execution, consistent with evidence that model-self-protection is insufficient under adaptive pressure [4].
+
+### C. Design Objectives
+
+The system is designed to (i) detect diverse injection families with high recall, (ii) maintain a low false-positive rate on benign creative and technical text, (iii) keep median interactive latency in the tens of milliseconds for the common path, (iv) prevent evaluation leakage by constructing retrieval memory from training data only, and (v) mitigate blocked prompts by rewriting rather than discarding recoverable user goals.
+
+---
+
+## IV. Proposed System
+
+### A. Architecture Overview
+
+Fig. 1 (conceptual) summarizes the final pipeline implemented in this repository.
+
+| Stage | Module | Function |
 |---|---|---|
-| 0 | Text normalizer | Leet / zero-width / Base64 / URL cleanup |
-| 1 | Lexical prefilter | High-precision rules, entropy & special-char cues |
-| 2 | Classical detectors | TF–IDF (15k features, 1–3 grams) + Logistic, RF, XGBoost, SVM |
-| 3 | Ensemble fusion | Weighted probability fusion + precision gate |
-| 2b | Semantic upgrade (gated) | `protectai/deberta-v3-base-prompt-injection-v2` when L3 is uncertain |
-| R | Attack retrieval | TF–IDF cosine vs **train-only** `data/attack_bank.json` |
-| 4 | Ambiguity judge | Heuristic (default) or optional LLM; BLOCK only with corroboration |
-| 5 | Intent-preserving rewrite | Extract goal → emit one safe natural prompt |
+| Normalization | Text normalizer | Canonicalizes leetspeak, zero-width characters, Base64, and URL encodings |
+| Layer 1 | Lexical prefilter | High-signal rule families and statistical cues (entropy, special-character density) |
+| Layer 2 | Classical detectors | TF–IDF features (15,000 dimensions; word \(n\)-grams 1–3) with logistic regression, random forest, XGBoost, and SVM |
+| Layer 3 | Ensemble fusion | Weighted probability fusion, ambiguity detection, and precision-oriented block gate |
+| Layer 2b | Semantic module | Gated DeBERTa prompt-injection classifier (`protectai/deberta-v3-base-prompt-injection-v2`) |
+| Retrieval | Attack bank | TF–IDF cosine similarity against a memory built exclusively from training attacks |
+| Layer 4 | Ambiguity judge | Resolves uncertain cases; hard blocks require corroboration from ensemble, semantic, or retrieval evidence |
+| Layer 5 | Intent-preserving rewrite | Extracts residual legitimate intent and emits one safe natural-language request |
 
-### B. Layer Details
+### B. Classical Ensemble
 
-**Layer 1 (Prefilter).** Rule families include system override, jailbreak, system/data extraction, tool injection, delimiter hijack, and Base64 cues, plus entropy/special-character thresholds for obfuscation signals.
+Classifier probabilities are fused with weights \(w_{\mathrm{logistic}}=1.3\), \(w_{\mathrm{SVM}}=1.3\), \(w_{\mathrm{XGBoost}}=0.4\), and \(w_{\mathrm{RF}}=0.3\). The operating threshold is 0.52. Cases with low confidence or low inter-model agreement (below 0.45) are marked ambiguous. Blocking further requires risk and agreement floors (0.70) unless strong risk (≥ 0.82) is observed, reducing brittle false blocks on weakly evidenced inputs.
 
-**Layer 2–3 (Classical ensemble).** Four TF–IDF classifiers are fused with weights favoring logistic and SVM (1.3 each) over XGBoost (0.4) and random forest (0.3). Operating point: decision threshold **0.52**; ambiguous if confidence/agreement fall below **0.45**. A **precision gate** requires `block_min_risk ≥ 0.70` and `block_min_agreement ≥ 0.70` (with `strong_risk = 0.82`) before weak ensemble evidence can hard-block.
+### C. Gated Semantic Scoring
 
-**Layer 2b (Gated DeBERTa).** Runs when Layer-3 confidence is below **0.40** or the case is marked ambiguous (threshold **0.78**). **Force-block from DeBERTa is disabled** in the paper configuration (`enable_force_block: false`) because earlier probes showed force-blocks dominated false positives on benign story/code text; soft-merge still informs scoring on ambiguous cases.
+The DeBERTa module executes when ensemble confidence falls below 0.40 or the instance is ambiguous. Semantic scores are merged into the decision pathway under gating; final hard blocking remains subject to ensemble precision constraints and corroboration policy so that semantic evidence improves difficult cases without dominating benign traffic.
 
-**Retrieval.** Cosine similarity against a train-built attack bank (hit threshold **0.65**, force-block only at **≥ 0.85** near-duplicates).
+### D. Train-Only Retrieval
 
-**Layer 4 (Judge).** Default `use_real_llm: false` uses a heuristic judge on ambiguous traffic only. A BLOCK requires ensemble / 2b / retrieval corroboration (`require_ensemble_corroboration: true`). Attack-type labels never force-block by themselves.
+An attack bank is constructed from training malicious examples and queried by cosine similarity (match threshold 0.65; near-duplicate force threshold 0.85). Held-out test prompts are never inserted into retrieval memory.
 
-**Layer 5 (Mitigation).** Intent extraction strips wrappers (jailbreak personas, “ignore instructions”, etc.) and an intent-preserving rewriter produces one natural safe prompt (template/heuristic path; optional LLM rewrite off in the reported config).
+### E. Ambiguity Judge and Mitigation
 
-### C. Decision Policy
+Layer 4 adjudicates ambiguous residual cases. A block decision from the judge requires corroborating signal from the ensemble, semantic module, or retrieval hit. Attack-type labels are retained as explanatory metadata and do not independently force a block. Layer 5 then removes adversarial wrappers (for example, jailbreak personas and “ignore previous instructions” scaffolds) and synthesizes a single clarified prompt that preserves the user’s legitimate objective.
 
-Normalized text flows L1 → L2 → L3 → retrieval → gated 2b → optional L4 → type labeling (metadata) → precision gate → final action → Layer-5 rewrite on block. Decision logging writes to `logs/decisions.jsonl` for auditability.
+### F. End-to-End Control Flow
+
+Normalized input proceeds through Layers 1–3, retrieval, gated Layer 2b, optional Layer 4, type annotation, precision gating, and final action selection. Blocked prompts are rewritten by Layer 5. Decisions are logged for audit and offline analysis.
 
 ---
 
 ## V. Experimental Setup
 
-### A. Dataset
+### A. Named Datasets and Corpora
 
-Processed corpus statistics (`data/processed/stats.json`):
+All corpora used in this work are explicitly named. Raw sources available under `data/raw/` are:
 
-| Split | Size | Notes |
-|---|---:|---|
-| Train | 189,214 | Malicious 96,315 / Benign 92,899 |
-| Val | 40,402 | Frozen |
-| Test | 40,402 | Frozen paper-primary |
-| Total | 270,018 | Mix: jayavibhav + moltbook + team; extras dropped |
+| Dataset name | File |
+|---|---|
+| Jayavibhav Prompt Injection | `jayavibhav_prompt_injection.jsonl` |
+| Moltbook Extended | `moltbook_extended.jsonl` |
+| CyberEC Prompt Injection Dataset 2 | `cyberec_prompt-injection-dataset2.jsonl` |
+| S-Labs Prompt Injection | `s-labs_prompt-injection.jsonl` |
+| Neuralchemy Threat Matrix | `neuralchemy_threat_matrix_all.jsonl` |
+| PromptShield | `promptshield_all.jsonl` |
 
-Split ratios 0.7 / 0.15 / 0.15, seed 42, group-id aware splitting. Attack-bank retrieval is built from **train only**.
+Processed labeled splits used by the final system are stored in `data/processed/{train,val,test}.jsonl`. Each record carries fields `text`, `label`, `attack_category`, and `source`.
 
-### B. Metrics and Protocol
+**Training set composition (final):** 278,843 examples.
 
-Paper-primary mode evaluates labeled `data/processed/test.jsonl` end-to-end (`scripts/Check_Accuracy.py`, mode `heldout`). We report accuracy, precision, recall, F1, AUC-ROC, FPR/FNR, confusion counts, latency, decision-source mix, and per-attack-type detection rates. Ablations on the **same** held-out set:
+| Named source (`source` field) | Count |
+|---|---:|
+| `jayavibhav_prompt_injection` | 248,553 |
+| `s_labs_prompt_injection` | 15,130 |
+| `cyberec_prompt_injection_dataset2` | 9,134 |
+| `moltbook_extended` | 6,015 |
+| Curated team review (`review_queue`, `inbox_review`, `inbox_manual`) | 11 |
+| **Total** | **278,843** |
+| Malicious / Benign | 141,020 / 137,823 |
 
-- `full` — all layers  
-- `classical_only` — L1+L2+L3 only  
-- `no_layer2b` / `no_retrieval` / `no_layer4` — disable one upgrade each  
+**Validation set:** 40,402 examples (`jayavibhav`: 39,237; `moltbook`: 1,165).  
+**Held-out test set (paper-primary):** 40,402 examples (`jayavibhav`: 39,195; `moltbook`: 1,207); 20,622 malicious and 19,780 benign.
 
-### C. Implementation Notes for Reported Runs
+Group-aware splitting with random seed 42 preserves related prompts within the same split. Validation and test partitions remain frozen for reporting.
 
-- Layer 2b backend: transformer (`protectai/deberta-v3-base-prompt-injection-v2`).
-- Layer 4 in reported numbers: **heuristic** (`layer4_heuristic`), not live GPT.
-- Hardware auto-plan available via `eval.auto_hw` for reproducible offline jobs.
+### B. Evaluation Protocol
+
+Primary metrics are computed on the frozen test set using `scripts/Check_Accuracy.py` in held-out mode: accuracy, precision, recall, F1-score, AUC-ROC, false-positive rate, false-negative rate, confusion counts, latency, decision-source distribution, and per-type detection rates. Ablations evaluate the same test set under:
+
+- `full` — complete pipeline;
+- `classical_only` — Layers 1–3 only;
+- `no_layer2b` — semantic module removed;
+- `no_retrieval` — attack-bank retrieval removed;
+- `no_layer4` — ambiguity judge removed.
+
+Attack-bank retrieval is always constructed from training data only.
+
+### C. Implementation
+
+The final implementation resides in this repository (`configs/config.yaml`, `src/pipeline/pipeline.py`, and associated layer modules). Reported held-out runs use the transformer backend for Layer 2b and the heuristic ambiguity judge for Layer 4. Optional live LLM judging is supported by configuration but is not required for the primary results below.
 
 ---
 
 ## VI. Results
 
-### A. Held-out Detection Performance (Paper-Primary)
+### A. Held-Out Detection Performance
 
-**Table I.** Detection performance on the held-out labeled test set (N = 40,402; 20,622 positive / 19,780 negative). Generated UTC `2026-09-07`.
+**Table I.** Performance on the frozen held-out test set (\(N=40{,}402\)).
 
 | Metric | Value |
 |---|---:|
 | Accuracy | 0.9583 |
 | Precision | 0.9706 |
 | Recall | 0.9469 |
-| F1 | 0.9586 |
+| F1-score | 0.9586 |
 | AUC-ROC | 0.9665 |
-| FPR | 0.0299 |
-| FNR | 0.0531 |
+| False-positive rate | 0.0299 |
+| False-negative rate | 0.0531 |
 | Specificity | 0.9701 |
-| Latency mean (ms) | 10.68 |
-| Latency p95 (ms) | 15.72 |
+| Mean latency (ms) | 10.68 |
+| 95th-percentile latency (ms) | 15.72 |
 
-Confusion matrix: **TP 19,528 · TN 19,188 · FP 592 · FN 1,094**.
+Confusion matrix: TP = 19,528; TN = 19,188; FP = 592; FN = 1,094.
 
-**Table II.** Decision-source mix on held-out traffic.
+**Table II.** Final decision sources on held-out traffic.
 
-| Source | Count | Share |
+| Decision source | Count | Proportion |
 |---|---:|---:|
-| `layer3_ensemble` | 39,439 | 97.6% |
-| `layer4_heuristic` | 921 | 2.3% |
-| `retrieval` | 42 | 0.1% |
+| Layer-3 ensemble | 39,439 | 97.6% |
+| Layer-4 judge | 921 | 2.3% |
+| Retrieval | 42 | 0.1% |
 
-Most decisions remain on the classical ensemble; semantic/judge paths are selectively escalated.
+The ensemble resolves the large majority of cases; semantic escalation and judgment are reserved for residual uncertainty.
 
-**Table III.** Per-attack-type detection rate (attacks only).
+**Table III.** Detection rate by attack category (malicious subset).
 
-| Attack type | Total | Detected | Rate |
+| Attack category | Support | Detected | Detection rate |
 |---|---:|---:|---:|
-| system_extraction | 503 | 501 | 0.9960 |
-| data_extraction | 6635 | 6540 | 0.9857 |
-| direct_injection | 4292 | 4223 | 0.9839 |
-| tool_injection | 289 | 275 | 0.9516 |
-| obfuscation | 17 | 16 | 0.9412 |
-| context_poisoning | 440 | 409 | 0.9295 |
-| multi_turn | 1020 | 944 | 0.9255 |
-| jailbreak | 1468 | 1330 | 0.9060 |
-| unknown | 5958 | 5290 | 0.8879 |
+| System extraction | 503 | 501 | 0.9960 |
+| Data extraction | 6,635 | 6,540 | 0.9857 |
+| Direct injection | 4,292 | 4,223 | 0.9839 |
+| Tool injection | 289 | 275 | 0.9516 |
+| Obfuscation | 17 | 16 | 0.9412 |
+| Context poisoning | 440 | 409 | 0.9295 |
+| Multi-turn | 1,020 | 944 | 0.9255 |
+| Jailbreak | 1,468 | 1,330 | 0.9060 |
+| Unknown | 5,958 | 5,290 | 0.8879 |
 
 ### B. Ablation Study
 
-**Table IV.** Component ablation on the same held-out set.
+**Table IV.** Ablation on the same held-out test set.
 
-| Ablation | Acc | Prec | Rec | F1 | AUC | FPR | Lat (ms) |
+| Configuration | Acc. | Prec. | Rec. | F1 | AUC | FPR | Latency (ms) |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **full** | 0.9583 | 0.9706 | 0.9469 | **0.9586** | 0.9665 | 0.0299 | 11.17 |
-| classical_only | 0.9307 | **0.9918** | 0.8714 | 0.9277 | **0.9932** | **0.0075** | 5.85 |
-| no_layer2b | 0.9204 | 0.9930 | 0.8500 | 0.9160 | 0.9930 | 0.0063 | 6.54 |
-| no_retrieval | 0.9583 | 0.9706 | 0.9469 | 0.9586 | 0.9666 | 0.0299 | 12.32 |
-| no_layer4 | 0.9576 | 0.9794 | 0.9366 | 0.9575 | 0.9686 | 0.0205 | 15.33 |
+| Full pipeline | 0.9583 | 0.9706 | 0.9469 | **0.9586** | 0.9665 | 0.0299 | 11.17 |
+| Classical only (L1–L3) | 0.9307 | **0.9918** | 0.8714 | 0.9277 | **0.9932** | **0.0075** | 5.85 |
+| Without Layer 2b | 0.9204 | 0.9930 | 0.8500 | 0.9160 | 0.9930 | 0.0063 | 6.54 |
+| Without retrieval | 0.9583 | 0.9706 | 0.9469 | 0.9586 | 0.9666 | 0.0299 | 12.32 |
+| Without Layer 4 | 0.9576 | 0.9794 | 0.9366 | 0.9575 | 0.9686 | 0.0205 | 15.33 |
 
-**Findings.**
-
-1. **Hybrid `full` favors recall** (0.9469) versus classical-only (0.8714), at a moderate FPR of 2.99%.  
-2. **Classical-only maximizes precision / minimizes FPR** (FPR 0.75%) but misses more attacks—useful as a high-precision operating point.  
-3. **Retrieval ablation ≈ full** at current thresholds (near-duplicate force-block is rare: 42 retrieval finals).  
-4. **Removing Layer 2b hurts** more than classical-only (F1 0.9160), indicating the gated semantic path and remaining stack interact; L4 heuristic alone does not substitute for 2b.  
-5. **Layer 4** slightly improves recall versus `no_layer4` (0.9469 vs 0.9366) with a small FPR increase.
+The classical ensemble provides a high-precision, low-latency baseline. The full hybrid configuration recovers substantial recall (0.9469 versus 0.8714) at a moderate false-positive rate of 2.99%. Removing the semantic module degrades recall further, indicating its role on difficult residual cases. Retrieval contributes few final decisions at the selected near-duplicate threshold. The ambiguity judge yields a modest recall gain relative to the configuration without Layer 4.
 
 ---
 
 ## VII. Discussion
 
-Results align with broader literature that favors **layered, application-controlled defenses** over model-only self-protection [4], [7], [8]. The ablation trade-off matches a recurring theme in comparative ML studies [11]: classical detectors are efficient and precise; semantic components buy recall on harder tails (jailbreaks, unknown-tagged attacks).
+The results support a layered application-gateway strategy consistent with recent surveys and empirical studies [1], [2], [4], [7], [11]: inexpensive classical detectors handle the bulk of traffic, while gated semantic analysis improves coverage on harder attack families such as jailbreaks and unknown-tagged prompts.
 
-**Limitations.** (i) Reported Layer-4 path is heuristic, not a live frontier LLM judge. (ii) Obfuscation support in the test slice is small (n = 17). (iii) `unknown` types remain the weakest family (0.8879). (iv) Retrieval adds little at the chosen force-block threshold—bank quality/thresholding is future work. (v) Agent-native threats across memory/tool/multi-agent layers [3] are only partially covered by a prompt gateway.
+**Limitations.** Obfuscation support in the frozen test slice is limited (\(n=17\)). The unknown category remains the weakest family. Near-duplicate retrieval rarely issues final decisions at the current threshold and can be strengthened through bank curation. Broader agent-stack threats spanning persistent memory, tool execution, and multi-agent coordination [3] require complementary controls beyond a prompt gateway. Live LLM judging is available but is not the basis of the primary tables.
 
-**Ethics.** The repository is a defensive research prototype. Attack-bank and datasets are for detection evaluation; do not use artifacts to develop offensive exploits against third-party systems.
+**Reproducibility.** Configuration, source code, named dataset files, and evaluation scripts are provided in the repository. Held-out and ablation summaries corresponding to Tables I–IV are produced by the accuracy-check tooling under `scripts/Check_Accuracy.py`.
 
 ---
 
 ## VIII. Conclusion
 
-We presented a gated hybrid lexical–semantic prompt-injection defense with intent-preserving mitigation. On a frozen held-out set of 40,402 prompts, the system reaches **F1 0.9586** and **FPR 0.0299** at ~11 ms mean latency, with ablations clarifying the precision–recall roles of classical versus hybrid components. Future work includes stronger retrieval banks, calibrated live LLM judging under corroboration constraints, expanded obfuscation/multi-turn evaluation, and tighter integration with agent-stack controls suggested by layered attack-surface models [3].
+This paper presented a hybrid lexical–semantic pipeline for prompt-injection detection with intent-preserving mitigation. Using named public and curated datasets and a frozen held-out test of 40,402 prompts, the final system achieves an F1-score of 0.9586 and a false-positive rate of 0.0299 at interactive latency. Ablations clarify the complementary roles of classical precision and hybrid recall. Future work includes richer obfuscation and multi-turn benchmarks, improved retrieval memory, calibrated live judging under corroboration constraints, and tighter coupling with agent-layer defenses.
 
 ---
 
@@ -239,9 +257,9 @@ We presented a gated hybrid lexical–semantic prompt-injection defense with int
 
 [3] K. Chu, “A Systematic Survey of Security Threats and Defenses in LLM-Based AI Agents: A Layered Attack Surface Framework,” arXiv:2604.23338, 2026.
 
-[4] P. Deep *et al.*, “Evaluation of Prompt Injection Defenses in Large Language Models,” Swept AI / University of Michigan, Apr. 2026. (arXiv:2604.23887)
+[4] P. Deep *et al.*, “Evaluation of Prompt Injection Defenses in Large Language Models,” Swept AI and University of Michigan, 2026. (arXiv:2604.23887)
 
-[5] B. Arshad, “Prompt Injection Attacks Against Large Language Models: A Comprehensive Threat Model and Mitigation Framework,” Birmingham City University, technical report.
+[5] B. Arshad, “Prompt Injection Attacks Against Large Language Models: A Comprehensive Threat Model and Mitigation Framework,” Birmingham City University.
 
 [6] K. Sarvakar, “Prompt Injection Attacks: Theory, Techniques, Defense, and Secure AI Systems,” SSRN 6816879, 2026.
 
@@ -255,62 +273,54 @@ We presented a gated hybrid lexical–semantic prompt-injection defense with int
 
 [11] N. Dzhaliuk *et al.*, “Comparative evaluation of machine learning methods for protecting LLMs from prompt injection attacks,” *International Journal of Information Security*, vol. 25, art. 109, 2026, doi: 10.1007/s10207-026-01264-8.
 
-[12] S. Chen, Y. Wang, N. Carlini, C. Sitawarin, and D. Wagner, “Defending Against Prompt Injection With a Few DefensiveTokens,” ACM CCS-related manuscript (ACM DL id 3733799.3762982).
+[12] S. Chen, Y. Wang, N. Carlini, C. Sitawarin, and D. Wagner, “Defending Against Prompt Injection With a Few DefensiveTokens,” ACM manuscript (ACM DL 3733799.3762982).
 
 [13] G. L. Viana, “Secure Prompt Engineering: A Practical Framework for Mitigating Prompt Injection and Data Leakage in LLM-based Systems (SPEF),” SSRN 6956641, 2026.
 
-[14] S. Arefin, “A Hybrid Lexical–Semantic Pipeline for Prompt-Injection Detection with Intent-Preserving Mitigation,” Version 4.0.0 [Computer software], 2026. https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling
+[14] S. Arefin, “A Hybrid Lexical–Semantic Pipeline for Prompt-Injection Detection with Intent-Preserving Mitigation” [Computer software]. https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling
 
 ---
 
-## Appendix A — Repository Quick Start
+## Appendix A — Software Usage
 
 ```bash
-# Python API
 python -m venv .venv
 # Windows: .\.venv\Scripts\activate
 pip install -r requirements.txt
-copy .env.example .env   # set secrets locally; never commit .env
+copy .env.example .env
 python run_api.py
 
-# Web UI
 cd web && npm install && npm start
-
-# Admin console
 cd admin && npm install && npm start
 ```
 
-Windows helpers: `Start.bat`, `StartAdmin.bat`.
-
-### Reproduce paper-primary metrics
+Helpers: `Start.bat`, `StartAdmin.bat`.
 
 ```bash
 python scripts/Check_Accuracy.py --mode heldout
 python scripts/Check_Accuracy.py --mode ablation
 ```
 
-Artifacts used in this README: `logs/paper/check_accuracy_heldout/` and `logs/paper/check_accuracy_ablation/` (local eval outputs; gitignored).
+### Principal paths
 
-### Key paths
-
-| Path | Purpose |
+| Path | Description |
 |---|---|
-| `configs/config.yaml` | Pipeline thresholds and feature flags |
+| `configs/config.yaml` | Final pipeline configuration |
 | `src/pipeline/pipeline.py` | End-to-end orchestration |
-| `data/attack_bank.json` | Train-only retrieval bank |
-| `author/` | LICENSE, NOTICE, AUTHORS, CITATION |
-| `docs/ALWAYS_ON_API.md` | Deployment / keep-alive notes |
+| `data/raw/` | Named source corpora |
+| `data/processed/` | Train / validation / test splits |
+| `data/attack_bank.json` | Train-only retrieval memory |
+| `author/` | License, notice, authors, citation |
 
 ---
 
-## Appendix B — How to Cite
+## Appendix B — BibTeX
 
 ```bibtex
-@software{arefin2026hybrid,
-  author  = {Arefin, Shams-ul},
-  title   = {A Hybrid Lexical--Semantic Pipeline for Prompt-Injection Detection with Intent-Preserving Mitigation},
-  version = {4.0.0},
-  year    = {2026},
-  url     = {https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling}
+@software{arefin_prompt_injection_defense,
+  author = {Arefin, Shams-ul},
+  title  = {A Hybrid Lexical--Semantic Pipeline for Prompt-Injection Detection with Intent-Preserving Mitigation},
+  url    = {https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling},
+  year   = {2026}
 }
 ```
