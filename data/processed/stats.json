@@ -1,8 +1,9 @@
 {
-  "train": 188540,
+  "train": 189214,
   "val": 40402,
   "test": 40402,
-  "total": 269344,
-  "malicious": 136488,
-  "benign": 132856
+  "total": 270018,
+  "train_malicious": 96315,
+  "train_benign": 92899,
+  "note": "Restored high-score mix: jayavibhav + moltbook + team only (extras dropped). Val/test frozen."
 }
