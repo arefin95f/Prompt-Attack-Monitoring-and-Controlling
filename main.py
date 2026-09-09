@@ -38,7 +38,7 @@ def step_1_explore_data():
     for file_path in files:
         if file_path.name.startswith('.'):
             continue
-        logger.info(f"\n📄 {file_path.name}")
+        logger.info(f"\n{file_path.name}")
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 first_line = f.readline().strip()
@@ -69,7 +69,7 @@ def step_2_process_data():
     
     split_stats = loader.save_splits(samples)
     
-    logger.info(f"\n✅ Processing complete!")
+    logger.info(f"\nProcessing complete!")
     logger.info(f"   Total: {split_stats['total']}")
     logger.info(f"   Train: {split_stats['train']}")
     logger.info(f"   Val: {split_stats['val']}")
@@ -84,6 +84,13 @@ def step_3_train_model():
     
     from src.data_loader.dataset_loader import DatasetLoader
     from src.layers.layer2_classifiers import Layer2Classifier
+    from src.training.team_weights import build_sample_weights
+    from src.utils.helpers import load_config
+    
+    cfg = load_config(Path("configs/config.yaml")) or {}
+    train_cfg = cfg.get("training") or {}
+    team_weight = float(train_cfg.get("team_sample_weight", 50))
+    team_sources = train_cfg.get("team_sources") or ["review_queue", "team_train", "inbox_review"]
     
     # Load data
     loader = DatasetLoader()
@@ -107,12 +114,32 @@ def step_3_train_model():
     
     if not train_samples:
         logger.error("No training data loaded!")
-        return
+        raise SystemExit(1)
+
+    if len(train_samples) < 100:
+        logger.error(
+            "Refusing to train on %s rows (need at least 100). "
+            "Upload datasets in Admin first, then click Train. "
+            "Existing models/detector/*.pkl were left unchanged.",
+            len(train_samples),
+        )
+        raise SystemExit(1)
     
     X_train = [s['text'] for s in train_samples]
     y_train = [s['label'] for s in train_samples]
+    sample_weights, weight_stats = build_sample_weights(
+        train_samples,
+        team_weight=team_weight,
+        team_sources=team_sources,
+    )
     
     logger.info(f"Training on {len(X_train)} samples")
+    logger.info(
+        "Team importance weighting: bulk=%s team=%s weight=%sx",
+        weight_stats["bulk_rows"],
+        weight_stats["team_rows"],
+        team_weight,
+    )
     
     # Initialize Layer2Classifier with correct parameters
     # The class only accepts: model_dir, max_features, ngram_range
@@ -122,14 +149,14 @@ def step_3_train_model():
         ngram_range=(1, 2)   # Keep it balanced for speed
     )
     
-    results = layer2.train(X_train, y_train)
+    results = layer2.train(X_train, y_train, sample_weight=sample_weights)
     
     if results:
-        logger.info(f"\n✅ Training complete!")
+        logger.info(f"\nTraining complete!")
         for name, metrics in results.items():
             logger.info(f"   {name}: Acc={metrics['accuracy']:.4f}, F1={metrics['f1']:.4f}")
     else:
-        logger.error("❌ Training failed!")
+        logger.error("Training failed!")
 
 
 def step_4_test_pipeline():
@@ -167,14 +194,14 @@ def step_4_test_pipeline():
         "How do I install Python?"
     ]
     
-    logger.info("\n🔍 Testing 5-Layer Pipeline:")
+    logger.info("\nTesting 5-Layer Pipeline:")
     
     results = []
     for i, prompt in enumerate(test_prompts):
         try:
             result = pipeline.process(prompt)
-            status = "🔴 MALICIOUS" if result.is_malicious else "🟢 BENIGN"
-            logger.info(f"\n  {i+1}. 📝 {prompt[:60]}...")
+            status = "MALICIOUS" if result.is_malicious else "BENIGN"
+            logger.info(f"\n  {i+1}. {prompt[:60]}...")
             logger.info(f"     {status}")
             logger.info(f"     Risk: {result.final_risk_score:.3f}")
             logger.info(f"     Attack: {result.attack_type}")
@@ -186,7 +213,7 @@ def step_4_test_pipeline():
     
     if results:
         malicious_count = sum(1 for r in results if r.is_malicious)
-        logger.info(f"\n📊 Summary: {malicious_count}/{len(results)} prompts flagged as malicious")
+        logger.info(f"\nSummary: {malicious_count}/{len(results)} prompts flagged as malicious")
 
 
 def main():
@@ -197,7 +224,7 @@ def main():
                        help='Which step to run')
     args = parser.parse_args()
     
-    logger.info("🚀 Prompt Injection Defense System v3.0 (5-Layer Pipeline)")
+    logger.info("Prompt Injection Defense System v3.0 (5-Layer Pipeline)")
     logger.info(f"Started at: {datetime.now()}")
     
     if args.step in ['explore', 'all']:
@@ -212,7 +239,7 @@ def main():
     if args.step in ['test', 'all']:
         step_4_test_pipeline()
     
-    logger.info(f"\n✅ Completed at: {datetime.now()}")
+    logger.info(f"\nCompleted at: {datetime.now()}")
 
 
 if __name__ == "__main__":

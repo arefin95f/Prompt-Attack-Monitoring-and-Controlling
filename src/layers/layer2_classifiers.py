@@ -29,10 +29,20 @@ class Layer2Classifier:
         self.models = {}
         self.is_trained = False
     
-    def train(self, X_train: List[str], y_train: List[int]) -> Dict:
+    def train(
+        self,
+        X_train: List[str],
+        y_train: List[int],
+        sample_weight: Optional[List[float]] = None,
+    ) -> Dict:
         logger.info("="*60)
         logger.info("LAYER 2: TRAINING")
         logger.info(f"Samples: {len(X_train)}")
+        if sample_weight is not None:
+            import numpy as np
+            w = np.asarray(sample_weight, dtype=float)
+            team_n = int((w > 1.0).sum())
+            logger.info(f"Team-weighted rows: {team_n} (max weight={float(w.max()):.1f})")
         logger.info("="*60)
         
         self.vectorizer = TfidfVectorizer(
@@ -47,6 +57,10 @@ class Layer2Classifier:
         X_train_vec = self.vectorizer.fit_transform(X_train)
         logger.info(f"Features: {X_train_vec.shape[1]}")
         
+        fit_kw = {}
+        if sample_weight is not None:
+            fit_kw["sample_weight"] = sample_weight
+        
         models = {
             'logistic': LogisticRegression(C=1.0, max_iter=1000, class_weight='balanced', random_state=42, n_jobs=-1),
             'random_forest': RandomForestClassifier(n_estimators=100, max_depth=10, class_weight='balanced', random_state=42, n_jobs=-1),
@@ -57,7 +71,7 @@ class Layer2Classifier:
         results = {}
         for name, model in models.items():
             try:
-                model.fit(X_train_vec, y_train)
+                model.fit(X_train_vec, y_train, **fit_kw)
                 self.models[name] = model
                 preds = model.predict(X_train_vec)
                 acc = accuracy_score(y_train, preds)
