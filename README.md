@@ -9,7 +9,7 @@
 **Project repository:** https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling  
 **Citation metadata:** [`author/CITATION.cff`](author/CITATION.cff)  
 
-**Document type:** Research report (IEEE citation style)  
+**Document type:** Research report
 **Formatting note for Word/PDF export:** Times New Roman, 12 pt; 1.5 or double line spacing; numbered pages; retain the numbered headings below.
 
 ---
