@@ -1,4 +1,4 @@
-# Three Linear SVMs for Prompt-Injection Detection, with Intent-Preserving Mitigation
+# Three Linear SVMs for Prompt-Injection Defense, with Safe Prompt Mitigation
 
 ---
 
@@ -6,7 +6,7 @@
 
 | Field | Detail |
 |---|---|
-| **Title** | Three Linear SVMs for Prompt-Injection Detection, with Intent-Preserving Mitigation |
+| **Title** | Three Linear SVMs for Prompt-Injection Defense, with Safe Prompt Mitigation |
 | **Author** | Shams-ul Arefin |
 | **Affiliation** | Independent research / software artifact |
 | **GitHub** | [@arefin95f](https://github.com/arefin95f) |
@@ -14,6 +14,7 @@
 | **Document type** | Research report |
 | **Citation style** | IEEE |
 | **Version under study** | System configuration `v4.1.0` (`configs/config.yaml`) |
+| **Primary topics** | Prompt-injection defense · Jailbreak detection · LLM security · Safe prompt mitigation · AI gateway |
 
 **Formatting note (Word / PDF export).** Use Times New Roman, 12 pt; 1.5 or double line spacing; numbered pages; retain the numbered section headings below.
 
@@ -21,13 +22,13 @@
 
 ## 2. Abstract
 
-Large language models (LLMs) treat natural language as both data and control. Prompt injection exploits that dual role to override instructions, extract hidden context, or coerce unsafe tool use. This report presents an application-layer gateway that detects such prompts and, when a request is blocked, offers one safer rephrasing of any recoverable legitimate intent.
+Large language models (LLMs) treat natural language as both data and control. Prompt injection, jailbreaking, instruction override, and related adversarial prompting attacks exploit that dual role to bypass safety policies, extract system prompts, leak private context, or coerce unsafe tool use. This report presents an application-layer **prompt-injection defense** gateway: a lightweight AI firewall that classifies untrusted prompts before they reach the model and, when a request is blocked, applies **safe prompt mitigation** by suggesting one safer alternative prompt.
 
-The live detector is a weighted blend of three linear support-vector machines (SVMs). The first model uses word-level TF–IDF features after English stopword removal. The second retains stopwords, because short function words such as “not”, “do”, and “you” frequently carry injection cues. The third uses character *n*-grams so that misspelled or lightly obfuscated wording still matches. The allow-or-block decision is the blend score compared with a fixed threshold of **0.515** (weights **0.12 / 0.38 / 0.50**, selected on the validation split only). An exact team-bank match may still force a block. Semantic judges, retrieval banks, and precision gates do not participate in the live decision.
+The live detector is a weighted ensemble of three linear support-vector machines (SVMs). The first model uses word-level TF–IDF features after English stopword removal. The second retains stopwords, because short function words such as “not”, “do”, and “you” frequently carry injection cues. The third uses character *n*-grams so that misspelled, encoded, or lightly obfuscated wording still matches. The allow-or-block decision is the blend score compared with a fixed threshold of **0.515** (weights **0.12 / 0.38 / 0.50**, selected on the validation split only). An exact team-bank match may still force a block. Semantic judges, retrieval banks, and precision gates do not participate in the live decision.
 
-Training used **240,641** labeled examples drawn from Jayavibhav, CyberEC, and S-Labs corpora. Evaluation used a frozen held-out test set of **68,446** prompts. On that set the live blend attained accuracy **0.9820**, precision **0.9876**, recall **0.9759**, F1-score **0.9817**, and false-positive rate **0.0120**. Rewrite quality was not scored and is not claimed as an empirical result. All figures in this report refer to the same decision rule unless stated otherwise.
+Training used **240,641** labeled examples drawn from Jayavibhav, CyberEC, and S-Labs corpora. Evaluation used a frozen held-out test set of **68,446** prompts. On that set the live blend attained accuracy **0.9820**, precision **0.9876**, recall **0.9759**, F1-score **0.9817**, and false-positive rate **0.0120**. Safe-prompt quality was not scored and is not claimed as an empirical result. All figures in this report refer to the same decision rule unless stated otherwise.
 
-**Index Terms**—Prompt injection, jailbreak detection, LLM security, linear SVM, TF–IDF, character *n*-grams, intent-preserving mitigation.
+**Index Terms**—Prompt injection defense, jailbreak detection, adversarial prompts, LLM security, LLM safety, AI red teaming, instruction override, system prompt extraction, indirect prompt injection, application-layer AI gateway, prompt filtering, linear SVM ensemble, TF–IDF, character *n*-grams, text classification, safe prompt mitigation, safe prompt rewriting.
 
 ---
 
@@ -51,27 +52,27 @@ Training used **240,641** labeled examples drawn from Jayavibhav, CyberEC, and S
 
 ### 4.1 Background and Motivation
 
-Prompt injection has become a primary security concern for LLM-backed applications [1]–[3]. Unlike classical input validation, the attack surface is linguistic: untrusted user text, retrieved documents, or tool outputs can be interpreted as instructions. Published taxonomies and corpora now support systematic measurement of detection methods [1], [2], [11]. At the same time, application designers require defenses that are accurate enough to trust and fast enough to place in front of interactive chat [7], [11].
+Prompt injection defense, jailbreak detection, and broader LLM security have become primary concerns for production AI systems [1]–[3]. Unlike classical input validation, the attack surface is linguistic: untrusted user text, retrieved documents (including indirect prompt injection in RAG pipelines), or tool outputs can be interpreted as instructions. Published taxonomies and corpora now support systematic measurement of detection and defense methods [1], [2], [11]. At the same time, application designers require an AI gateway that is accurate enough to trust and fast enough to place in front of interactive chat [7], [11].
 
 ### 4.2 Problem Statement
 
-An LLM application cannot reliably separate trusted system instructions from untrusted user or retrieved text. An adversary may therefore override prior instructions, leak secrets, jailbreak safety policies, or invoke privileged tools [4]–[6]. Ordinary sanitization is a weak fit for an open language interface [5]. Many defenses either block benign technical questions or refuse the entire request and discard a legitimate goal wrapped inside attack wording [1], [7], [8].
+An LLM application cannot reliably separate trusted system instructions from untrusted user or retrieved text. An adversary may therefore perform instruction override, system prompt extraction, data exfiltration, jailbreaking, or unsafe tool invocation [4]–[6]. Ordinary sanitization is a weak fit for an open language interface [5]. Many defenses either block benign technical questions or refuse the entire request and discard a legitimate user goal wrapped inside attack wording [1], [7], [8].
 
 ### 4.3 Research Aim and Objectives
 
 **Aim.**  
-To design, implement, and evaluate an application-layer gateway that detects prompt injection with a three-SVM blend and mitigates blocked prompts by offering one safer request.
+To design, implement, and evaluate an application-layer **prompt-injection defense** based on a three-SVM blend, with **safe prompt mitigation** after a block.
 
 **Specific objectives.**
 
 1. Train three linear SVMs on complementary text views and fuse them with fixed, validation-selected weights.  
 2. Keep later or optional stages off the decision path when they reduce held-out performance.  
-3. Attach an intent-preserving rewrite after a block, without treating rewrite quality as a measured outcome.  
+3. Attach safe prompt mitigation after a block—suggesting one safer alternative prompt—without treating mitigation quality as a measured outcome.  
 4. Score the live decision on a frozen held-out test set and report contribution evidence for the blend components and normalizer on that same file.
 
 ### 4.4 Scope and Boundaries
 
-This report measures **offline detection** on labeled prompt text and describes the post-block rewrite module. It does **not** report adaptive attack success rates, human ratings of rewrite quality, or a leaderboard comparison against external detectors on this test file. Those experiments were not conducted.
+This report measures **offline prompt-injection detection** on labeled prompt text and describes the post-block safe prompt mitigation module. It does **not** report adaptive attack success rates, human ratings of safe-prompt quality, or a leaderboard comparison against external detectors on this test file. Those experiments were not conducted.
 
 ### 4.5 Organization of the Report
 
@@ -95,9 +96,9 @@ Deep *et al.* conclude that a security boundary should be enforced in applicatio
 
 ### 5.4 Research Gap
 
-Layered defenses are well motivated [1], [2], [7], [8], and application-side enforcement is preferable to model-only self-protection [4]. Two practical gaps remain. First, many systems stop at a binary allow-or-block outcome and do not offer a safer reformulation of recoverable intent [1], [8]. Second, many pipelines add semantic or heuristic stages without demonstrating, on the same frozen test file, whether those stages improve or degrade detection [11].
+Layered defenses are well motivated [1], [2], [7], [8], and application-side enforcement is preferable to model-only self-protection [4]. Two practical gaps remain. First, many systems stop at a binary allow-or-block outcome and do not provide **safe prompt mitigation**—a safer alternative the user can accept [1], [8]. Second, many pipelines add semantic or heuristic stages without demonstrating, on the same frozen test file, whether those stages improve or degrade detection [11].
 
-This project addresses those gaps with a named corpus, a frozen test split, a three-SVM blend as the sole live decision mechanism, and a rewrite stage after blocking. It does not claim to resolve agent-memory or multi-agent threats [3].
+This project addresses those gaps with a named corpus, a frozen test split, a three-SVM blend as the sole live decision mechanism, and safe prompt mitigation after blocking. It does not claim to resolve agent-memory or multi-agent threats [3].
 
 ---
 
@@ -114,18 +115,18 @@ The study follows an experimental systems-design approach:
 5. Score the live blend once on the frozen held-out test set.  
 6. Report aggregate metrics, the confusion matrix, decision-source attribution, and detection rate by attack category.
 
-Detection outcomes are quantitative. **Rewrite quality was not scored** and is therefore not presented as an empirical claim.
+Detection outcomes are quantitative. **Safe-prompt mitigation quality was not scored** and is therefore not presented as an empirical claim.
 
 ### 6.2 System Under Study
 
-The live decision path is the three-SVM blend. Other modules remain in the repository for mitigation or research tooling; they do not override the blend under the reported configuration (`blend_only: true`).
+The live decision path is the three-SVM blend. Other modules remain in the repository for safe prompt mitigation or research tooling; they do not override the blend under the reported configuration (`blend_only: true`).
 
 | Stage | Module | Role in the live system |
 |---|---|---|
 | 1 | Layer 1 Normalizer | Decodes and unfolds obfuscation (e.g., leetspeak, zero-width characters, Base64, URL encoding). The SVMs score the normalized string. This stage does not allow or block. |
 | 2 | Layer 2 Classifiers | Three linear SVMs: stopword TF–IDF, no-stopword TF–IDF, and character *n*-grams. |
 | 3 | Layer 3 Blend | Weighted average of the three risk scores. This stage produces the allow-or-block decision. |
-| 4 | Layer 4 Rewriter | After a block, extracts recoverable intent and emits one safer natural-language request. This stage does not allow or block. |
+| 4 | Layer 4 Safe Prompt Mitigation | After a block, proposes one safer alternative prompt the user may accept. This stage does not allow or block. |
 
 **Blend weights.** Stopword SVM 0.12; no-stopword SVM 0.38; character SVM 0.50.  
 **Decision threshold.** 0.515 — scores strictly above 0.515 are treated as malicious.  
@@ -249,7 +250,7 @@ An earlier project variant fused heterogeneous classical models and allowed sema
 
 ### 8.3 Limitations
 
-1. Rewrite fluency, intent fidelity, and user acceptance were not scored.  
+1. Safe-prompt fluency, fidelity, and user acceptance were not scored.  
 2. External public detectors were not re-run on this test file.  
 3. Obfuscation support is only 17 prompts.  
 4. Training contains source mixtures that do not match the frozen test mixture one-for-one; generalization claims should respect that split.  
@@ -263,18 +264,18 @@ An earlier project variant fused heterogeneous classical models and allowed sema
 
 ### 9.1 Conclusion
 
-This report presented an application-layer gateway for prompt-injection detection based on a weighted blend of three linear SVMs, together with an intent-preserving rewrite after blocking. On 68,446 frozen held-out prompts, the blend achieved accuracy 0.9820, precision 0.9876, recall 0.9759, F1-score 0.9817, and false-positive rate 0.0120. Every decision was attributed to the blend. Rewrite quality remains unmeasured and is therefore outside the empirical claims of this study.
+This report presented an application-layer **prompt-injection defense** based on a weighted blend of three linear SVMs, with **safe prompt mitigation** after blocking. On 68,446 frozen held-out prompts, the blend achieved accuracy 0.9820, precision 0.9876, recall 0.9759, F1-score 0.9817, and false-positive rate 0.0120. Every decision was attributed to the blend. Safe-prompt quality remains unmeasured and is therefore outside the empirical claims of this study.
 
 ### 9.2 Practical Recommendations
 
-1. Deploy the blend as a gateway in front of the LLM. It does not replace logging, access control, or secret handling [4], [5].  
+1. Deploy the blend as an AI gateway / prompt filter in front of the LLM. It does not replace logging, access control, or secret handling [4], [5].  
 2. Do not re-enable semantic, retrieval, or judge decision stages and continue to cite Table I; those configurations constitute a different system.  
 3. Treat attack-type labels as explanatory annotations, not as an independent block rule.  
 4. Monitor the unknown category in production traffic and fold confirmed mistakes into the training review set.
 
 ### 9.3 Future Work
 
-1. Score rewrite quality with an explicit rubric and human or model judges.  
+1. Score safe prompt mitigation quality with an explicit rubric and human or model judges.  
 2. Re-run strong public detectors on this same frozen test file.  
 3. Enlarge the obfuscation and multi-turn slices.  
 4. Measure the effect of the team-bank override once it fires on held-out text.  
@@ -310,7 +311,7 @@ This report presented an application-layer gateway for prompt-injection detectio
 
 [13] G. L. Viana, “Secure Prompt Engineering: A Practical Framework for Mitigating Prompt Injection and Data Leakage in LLM-based Systems (SPEF),” SSRN 6956641, 2026.
 
-[14] S. Arefin, “Three Linear SVMs for Prompt-Injection Detection, with Intent-Preserving Mitigation” [Computer software]. Available: https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling
+[14] S. Arefin, “Three Linear SVMs for Prompt-Injection Defense, with Safe Prompt Mitigation” [Computer software]. Available: https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling
 
 ---
 
@@ -357,7 +358,7 @@ python main.py --step train
 | `src/pipeline/pipeline.py` | Decision orchestration |
 | `src/layers/layer2_classifiers.py` | The three SVMs |
 | `src/layers/layer3_blend.py` | Weighted blend |
-| `src/layers/layer4_rewriter.py` | Post-block safer-prompt rewrite |
+| `src/layers/layer4_rewriter.py` | Safe prompt mitigation after a block |
 | `models/detector/` | Saved SVM and vectorizer artifacts |
 | `data/processed/` | Frozen train, validation, and test splits |
 | `scripts/Check_Accuracy.py` | Held-out evaluation |
@@ -368,9 +369,10 @@ python main.py --step train
 
 ```bibtex
 @software{arefin_prompt_injection_defense,
-  author = {Arefin, Shams-ul},
-  title  = {Three Linear SVMs for Prompt-Injection Detection, with Intent-Preserving Mitigation},
-  url    = {https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling},
-  year   = {2026}
+  author       = {Arefin, Shams-ul},
+  title        = {Three Linear SVMs for Prompt-Injection Defense, with Safe Prompt Mitigation},
+  url          = {https://github.com/arefin95f/Prompt-Attack-Monitoring-and-Controlling},
+  year         = {2026},
+  keywords     = {prompt injection defense, jailbreak detection, LLM security, safe prompt mitigation, linear SVM, TF-IDF, AI gateway}
 }
 ```
